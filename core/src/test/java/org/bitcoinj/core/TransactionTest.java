@@ -488,7 +488,8 @@ public class TransactionTest {
         Coin fee = Coin.valueOf(1_000);
 
         Sha256Hash fundTxHash = Sha256Hash.wrap(
-            "4bf459fc7e9a187742cd5fadb40afb412e852e51cb8f6c5d6f811eca7f00705b"
+//            "4bf459fc7e9a187742cd5fadb40afb412e852e51cb8f6c5d6f811eca7f00705b" // -->spent in cb97e120dbb9d2db1dc37cddd7c7463e8ef7de6b2e8f8e52acc051a9618ef4ff#vin=0
+            "e692d0daeda4b41fc38304df2d8b6ad537e11c687c29d6334d4f3026ab859621"   // unspent
         );
         int outputIndex = 0;
 
