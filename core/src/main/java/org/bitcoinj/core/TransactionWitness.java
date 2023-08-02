@@ -22,9 +22,11 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+import java.util.Objects;
 import javax.annotation.Nullable;
 
 import org.bitcoinj.crypto.TransactionSignature;
+import org.bitcoinj.script.Script;
 
 public class TransactionWitness {
     public static final TransactionWitness EMPTY = new TransactionWitness(0);
@@ -43,8 +45,18 @@ public class TransactionWitness {
 
     private final List<byte[]> pushes;
 
+    private TransactionWitness(List<byte[]> pushes) {
+        for (byte[] push : pushes)
+            Objects.requireNonNull(push);
+        this.pushes = pushes;
+    }
+
     public TransactionWitness(int pushCount) {
         pushes = new ArrayList<>(Math.min(pushCount, Utils.MAX_INITIAL_ARRAY_LENGTH));
+    }
+
+    public static TransactionWitness of(List<byte[]> pushes) {
+        return new TransactionWitness(pushes);
     }
 
     public byte[] getPush(int i) {
@@ -106,5 +118,15 @@ public class TransactionWitness {
             hashCode = 31 * hashCode + (push == null ? 0 : Arrays.hashCode(push));
         }
         return hashCode;
+    }
+
+    public static TransactionWitness createWitnessScript(Script witnessScript, List<TransactionSignature> signatures) {
+        List<byte[]> pushes = new ArrayList<>(signatures.size() + 2);
+        pushes.add(new byte[] {});
+        for (TransactionSignature signature : signatures) {
+            pushes.add(signature.encodeToBitcoin());
+        }
+        pushes.add(witnessScript.getProgram());
+        return TransactionWitness.of(pushes);
     }
 }

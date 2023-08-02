@@ -22,6 +22,7 @@ import org.bitcoinj.crypto.TransactionSignature;
 import org.bitcoinj.params.*;
 import org.bitcoinj.script.*;
 import org.bitcoinj.testing.*;
+import org.bouncycastle.util.encoders.Hex;
 import org.easymock.*;
 import org.junit.*;
 
@@ -32,6 +33,7 @@ import java.util.*;
 import static org.bitcoinj.core.Utils.HEX;
 
 import static org.bitcoinj.core.Utils.uint32ToByteStreamLE;
+import static org.bitcoinj.script.ScriptOpCodes.OP_0;
 import static org.easymock.EasyMock.*;
 import static org.junit.Assert.*;
 
@@ -457,6 +459,95 @@ public class TransactionTest {
                 + "92040000"; // nLockTime
         assertEquals(signedTxHex, HEX.encode(tx.bitcoinSerialize()));
         assertEquals(signedTxHex.length() / 2, tx.getMessageSize());
+    }
+
+    @Test
+    public void testWitnessSignatureP2SH_P2WSH() {
+        NetworkParameters networkParameters = NetworkParameters.fromID(NetworkParameters.ID_TESTNET);
+
+        String wifPrivKey1 = "cMgRyc5tpWLWKfs2gSv6zRXu2ZaQSqwVtU6oNbQneSgCB13JCQNA";
+        String wifPrivKey2 = "cW19KKSRKHATNb4oPPvyaSqLCs82nqFyZqQbVY6zaD82YtERYL51";
+        String wifPrivKey3 = "cUq9ruifqrtMPMwwu6SrKPr6A7egwhvPZxwE7uMmWQdn11LsHpWi";
+
+        ECKey key1 = DumpedPrivateKey.fromBase58(networkParameters, wifPrivKey1).getKey();
+        ECKey key2 = DumpedPrivateKey.fromBase58(networkParameters, wifPrivKey2).getKey();
+        ECKey key3 = DumpedPrivateKey.fromBase58(networkParameters, wifPrivKey3).getKey();
+
+        List<ECKey> standardKeys = new ArrayList<>();
+        standardKeys.add(key1);
+        standardKeys.add(key2);
+        standardKeys.add(key3);
+
+        Script redeemScript = new ScriptBuilder()
+            .createRedeemScript(standardKeys.size()/2+1, standardKeys);
+
+        Script outputScript = ScriptBuilder.createP2SHP2WSHOutputScript(redeemScript);
+        System.out.println("Address: " + LegacyAddress.fromP2SHScript(networkParameters, outputScript));
+
+        Coin value = Coin.valueOf(10_000);
+        Coin fee = Coin.valueOf(1_000);
+
+        Sha256Hash fundTxHash = Sha256Hash.wrap(
+            "4bf459fc7e9a187742cd5fadb40afb412e852e51cb8f6c5d6f811eca7f00705b"
+        );
+        int outputIndex = 0;
+
+        Address receiver = Address.fromString(networkParameters,"msgc5Gtz2L9MVhXPDrFRCYPa16QgoZ2EjP");
+
+        Transaction spendTx = new Transaction(networkParameters);
+        spendTx.addInput(fundTxHash, outputIndex, redeemScript);
+        spendTx.addOutput(value.minus(fee), receiver);
+        spendTx.setVersion(2);
+
+        // Create signatures
+        Sha256Hash sigHash = spendTx.hashForWitnessSignature(
+            0,
+            redeemScript,
+            value,
+            Transaction.SigHash.ALL,
+            false
+        );
+
+        byte[] redeemScriptHash = Sha256Hash.hash(redeemScript.getProgram());
+        Script scriptSig = new ScriptBuilder().number(OP_0).data(redeemScriptHash).build();
+        Script segwitScriptSig = new ScriptBuilder().data(scriptSig.getProgram()).build();
+
+        spendTx.getInput(0).setScriptSig(segwitScriptSig);
+
+        int totalSigners = standardKeys.size();
+        List<TransactionSignature> allTxSignatures = new ArrayList<>();
+
+        for (int i = 0; i < totalSigners; i++) {
+            ECKey keyToSign = standardKeys.get(i);
+            ECKey.ECDSASignature signature = keyToSign.sign(sigHash);
+            TransactionSignature txSignature = new TransactionSignature(
+                signature,
+                Transaction.SigHash.ALL,
+                false
+            );
+
+            standardKeys.get(i).verify(sigHash, signature);
+
+            allTxSignatures.add(txSignature);
+        }
+
+        int requiredSignatures = totalSigners / 2 + 1;
+        List<TransactionSignature> txSignatures = allTxSignatures.subList(0, requiredSignatures);
+
+        TransactionWitness txWitness = TransactionWitness.createWitnessScript(redeemScript, txSignatures);
+        spendTx.getInput(0).setWitness(txWitness);
+
+        spendTx.getInput(0).getScriptSig().correctlySpends(
+            spendTx,
+            0,
+            spendTx.getInput(0).getWitness(),
+            spendTx.getInput(0).getValue(),
+            outputScript,
+            Script.ALL_VERIFY_FLAGS
+        );
+
+        // Uncomment to print the raw tx in console and broadcast https://blockstream.info/testnet/tx/push
+        System.out.println(Hex.toHexString(spendTx.bitcoinSerialize()));
     }
 
     private boolean correctlySpends(TransactionInput txIn, Script scriptPubKey, int inputIndex) {

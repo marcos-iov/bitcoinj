@@ -590,4 +590,14 @@ public class ScriptBuilder {
         builder.smallNum(1); // Use the CHECKLOCKTIMEVERIFY if branch
         return builder.build();
     }
+
+    public static Script createP2SHP2WSHOutputScript(Script redeemScript) {
+        byte[] redeemScriptHash = Sha256Hash.hash(redeemScript.getProgram());
+        Script witnessScript = new ScriptBuilder()
+            .number(ScriptOpCodes.OP_0)
+            .data(redeemScriptHash)
+            .build();
+
+        return ScriptBuilder.createP2SHOutputScript(witnessScript);
+    }
 }
